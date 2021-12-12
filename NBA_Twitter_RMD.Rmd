@@ -1,0 +1,361 @@
+---
+title: "NBA_Twitter_RMD"
+author: "Aaron Angeles"
+date: "12/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Importing Tweets from CSV (processed in python pandas)
+```{r}
+tweets <- read.csv('NBA_tweets.csv')
+```
+
+# Fixing Timing of Tweets
+```{r}
+library(anytime)
+tweets$date <- as.Date(tweets$date)
+#tweets$time <- strptime(tweets$time, format ="%H:%M:%OS")
+tweets$time <- as.POSIXct(tweets$time, format = "%H:%M:%S")
+
+#tweets$time <- format(time,format="%H:%M:%S")
+
+# tweets$date <- as.POSIXct(tweets$created_at, format = "%m/%d/%Y %H:%M:%S")
+#   
+# # extract time from date
+
+```
+
+
+```{r}
+class(tweets$time)
+```
+# Processing Mentioned Users / Hashtags as Binary Variables
+```{r}
+levels(tweets$mentions) <- c(levels(tweets$mentions), 0)
+tweets$mentions[tweets$mentions==""] <- 0
+
+levels(tweets$hashtags) <- c(levels(tweets$hashtags), 0,1)
+tweets$hashtags[tweets$hashtags==""]<-0
+
+tweets$mentions <- as.numeric(tweets$mentions != "0")
+tweets$hashtags <- as.numeric(tweets$hashtags != "0")
+```
+
+# Processing Media Type
+```{r}
+library(stringr)
+library(dplyr)
+
+levels(tweets$media) <- c(levels(tweets$media), "Text","Photo","Gif","Video",0)
+tweets$media[tweets$media==""]<-0
+```
+
+```{r}
+for (i in 1:nrow(tweets)) {
+  if(tweets$media[i]==0){
+    tweets$media[i]="Text"
+  }
+  else if(str_detect(tweets$media[i],"Photo")){
+    tweets$media[i]="Photo"
+  }
+  
+  else if(str_detect(tweets$media[i],"Gif")){
+    tweets$media[i]="Gif"
+  }
+  
+  else{
+    tweets$media[i]="Video"
+  }
+}
+```
+
+# Grouping By Media, Hashtag and Mentions
+```{r}
+
+meandata2 <- tweets %>% 
+  group_by(media, hashtags, mentions) %>% 
+  summarise(across(c('reply_count','favorite_count','retweet_count','QuoteCount'), list(mean = mean)))
+
+meandata2
+
+Gifs <- subset(meandata2,media=="Gif")
+Videos <- subset(meandata2,media=="Video")
+Texts <- subset(meandata2,media=="Text")
+Photos <- subset(meandata2,media=="Photo")
+
+meandata2$reply_count_mean <- scale(meandata2$reply_count_mean)
+meandata2$retweet_count_mean <- scale(meandata2$retweet_count_mean )
+meandata2$favorite_count_mean <- scale(meandata2$favorite_count_mean)
+meandata2$QuoteCount_mean <- scale(meandata2$QuoteCount_mean)
+for(i in 1:nrow(meandata2)){
+  meandata2$sum[i] <- sum(meandata2[i,4:7])
+}
+
+meandata2[order(meandata2$sum),]
+
+```
+
+### Findings 
+* For 
+* For 
+* For 
+
+# Sorting by Date - Visualization 1
+```{r}
+library(ggplot2)
+tweets_sorted <- tweets[order(tweets$date),]
+
+p <- ggplot(tweets_sorted, aes(x=date, y=favorite_count)) +
+  geom_line() + 
+  xlab("Date")+scale_x_date(limit=c(as.Date("2021-01-01"),as.Date("2021-11-01"))) + geom_vline(xintercept=as.Date("2021-08-02"),color="red") +
+  geom_vline(xintercept=as.Date("2021-10-19"),color="blue",lwd=3,alpha=0.10)+ geom_vline(xintercept=as.Date("2021-11-01"),color="blue",lwd=3,alpha=0.10) + 
+  geom_vline(xintercept=as.Date("2021-06-29"),color="green") + annotate("text", x=as.Date("2021-06-29"), y=30000, label= "NBA Draft",colour="green") + 
+  annotate("text", x=as.Date("2021-10-19"), y=30000, label= "Opening Night",colour="blue") + annotate("text", x=as.Date("2021-08-02"), y=30000, label= "Free Agency",colour="red")
+p
+
+```
+# Standard Linear Regression
+```{r}
+
+#lm_fit <- lm(retweet_count+QuoteCount~media+time,data=tweets)
+#summary(lm_fit)
+#plot(lm_fit)
+
+```
+
+
+# Creating Noah's Stat
+```{r}
+for(i in 1:nrow(tweets)){
+  
+  likes <- tweets$favorite_count[i]
+  retweets <- tweets$retweet_count[i]
+  quotes <- tweets$QuoteCount[i]
+  tweets$stat[i] <- sum(likes+10*retweets+12*quotes)
+}
+
+
+```
+
+# Polynomial Regression and Visualization for Noah's Stat
+```{r}
+# poly_fit <- lm(stat ~ poly(Time,2),data=tweets)
+# summary(poly_fit)
+# plot(poly_fit)
+
+Gifs <- subset(tweets,media=="Gif")
+Videos <- subset(tweets,media=="Video")
+Texts <- subset(tweets,media=="Text")
+Photos <- subset(tweets,media=="Photo")
+
+ggplot(tweets, aes(x = time, y = stat)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,2)),col="blue")+ylim(0,50000)
+```
+
+
+# Regression Tree Analysis
+```{r}
+# read in libraries for regression tree
+
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+library(caret)
+
+# create tree using training set and all variables (tree picks important ones)
+
+tree <- rpart(stat ~ time, data = Photos, method = 'anova')
+
+#plot the tree from training data 
+
+fancyRpartPlot(tree)
+
+```
+
+# Rounding Time, Additional Plots
+```{r}
+# 
+#tweets$time <- round(tweets$time,0)
+
+tweets[tweets$hour==3,]
+
+ggplot(tweets, aes(x = hour, y = retweet_count)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,4)),col="blue")
+
+ggplot(tweets, aes(x = hour)) + 
+  geom_histogram(bins = 24)
+
+mean_hour <- tweets %>% 
+  group_by(hour) %>% 
+  summarise(quantile=quantile(retweet_count+QuoteCount,probs=0.10))
+
+mean_hour
+
+ggplot(mean_hour, aes(x = hour, y = quantile)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,4)),col="blue")
+
+```
+
+```{r}
+class(tweets$time)
+#tweets$time <- strptime(tweets$time, format ="%H:%M:%OS")
+```
+
+# Polynomial Regression
+```{r,message=FALSE}
+
+ggplot(tweets, aes(x = hour, y = retweet_count)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,4)),col="blue")
+
+ggplot(tweets, aes(x = hour)) + 
+  geom_histogram(bins = 17)
+
+tweets <- tweets[tweets$hour > 7,]
+
+ggplot(tweets, aes(x = hour, y = retweet_count)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,4)),col="blue")
+
+mean_hour3 <- tweets %>% 
+  group_by(hour) %>% 
+  summarise(quantile=quantile((retweet_count+QuoteCount),probs=c(0.50)))
+
+ggplot(mean_hour3, aes(x = hour, y = quantile)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,5)),col="blue") + labs(x="Local hour",y="Retweets and Quote tweets of .50 and .75 Quantile")
+
+mean_hour4 <- tweets %>% 
+  group_by(hour) %>% 
+  summarise(mean=mean((retweet_count+QuoteCount)))
+
+ggplot(mean_hour4, aes(x = hour, y = mean)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,5)),col="blue") + labs(x="Local hour",y="Mean Retweets and Quote tweets")
+
+
+
+num_tweets <- tweets %>% 
+  group_by(hour) %>% 
+  summarise(n_tweets = length(retweet_count))
+
+# ggplot(num_tweets, aes(x = Time, y = n_tweets)) + 
+#   geom_point() +
+#   stat_smooth(method='lm', formula = (y~poly(x,3)),col="blue") + labs(x="Local Time",y="Mean Retweets and Quote Tweets")
+
+
+# Importing Libraries for Model Building
+
+```
+
+
+```{r}
+
+library(ISLR)
+library(lubridate)
+library(anytime)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+library(caret)
+library(gbm)
+library(foreign)
+library(MASS)
+
+```
+
+# Model Building
+
+```{r}
+
+tweets <- droplevels(tweets)
+
+lm_fit <- lm(retweet_count ~ poly(hour,5) + media + mentions + day_of_week, data = tweets)
+summary(lm_fit)
+
+# create tree using training set and all variables (tree picks important ones)
+
+tree <- rpart(retweet_count ~ hour + media + mentions + day_of_week, data = tweets, method = 'anova')
+
+#plot the tree from training data 
+
+fancyRpartPlot(tree)
+
+```
+
+## Negative Binomial
+
+```{r}
+
+ggplot(tweets, aes(retweet_count, fill = media)) + geom_histogram(binwidth = 1) + facet_grid(media ~ ., margins = TRUE, scales = "free") + xlim(0,200)
+
+```
+
+```{r}
+
+with(tweets, tapply(retweet_count, media, function(x) {
+    sprintf("M (SD) = %1.2f (%1.2f)", mean(x), sd(x))
+}))
+
+```
+
+```{r}
+tweets$media <- relevel(as.factor(tweets$media),"Text")
+levels(as.factor(tweets$media))
+summary(m1 <- glm.nb(retweet_count ~ as.factor(hour) + media, data = tweets))
+#(est <- cbind(Estimate = coef(m1), confint(m1)))
+
+```
+```{r}
+predicted <- predict(m1, newdata=tweets)
+sqrt(mean((tweets$retweet_count-predicted)^2))
+
+exp(1.0635)
+exp(1.103952)
+exp(0.8557)
+```
+
+```{r}
+
+newdata2 <- data.frame(
+  hour = rep(seq(from = min(tweets$hour), to = max(tweets$hour), length.out = 100), 4),
+  media = factor(rep(1:4, each = 100), levels = 1:4, labels =
+  levels(as.factor(tweets$media))))
+
+newdata2 <- cbind(newdata2, predict(m1, newdata2, type = "link", se.fit=TRUE))
+newdata2 <- within(newdata2, {
+  retweet_count <- exp(fit)
+  LL <- exp(fit - 1.96 * se.fit)
+  UL <- exp(fit + 1.96 * se.fit)
+})
+
+ggplot(newdata2, aes(hour, retweet_count)) +
+  geom_ribbon(aes(ymin = LL, ymax = UL, fill = media), alpha = .25) +
+  geom_line(aes(colour = media), size = 2) +
+  labs(x = "Time of Day", y = "Predicted Retweets") + xlim(7,24)
+
+```
+
+
+
+```{r}
+levels(as.factor(tweets$media))
+
+```
+
+
+
+
