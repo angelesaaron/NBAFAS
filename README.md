@@ -20,4 +20,13 @@ For each league affiliate, we outlined some key takeaways. Those included, but w
 
 ### Slide Deck
 ![Slide](images/1.png)
-
+![Slide](images/2.png)
+![Slide](images/3.png)
+![Slide](images/4.png)
+![Slide](images/5.png)
+![Slide](images/6.png)
+![Slide](images/7.png)
+![Slide](images/8.png)
+![Slide](images/9.png)
+![Slide](images/10.png)
+![Slide](images/11.png)
