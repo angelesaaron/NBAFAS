@@ -1,0 +1,87 @@
+---
+title: "NBA 2k Data"
+author: "Caroline Singer"
+date: "12/2/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#installing packages
+require(foreign)
+require(ggplot2)
+require(MASS)
+library("stringr")
+```
+
+```{r}
+#adding to / editing the original csv file
+tweets = read.csv("out_of_game_2k_tweets.csv", header=TRUE)
+attach(tweets)
+tweets['engagement_index'] <- as.numeric(tweets$ReplyCount) + as.numeric(tweets$LikeCount) + as.numeric(tweets$RetweetCount)
+tweets$week_day <- weekdays(as.Date(tweets$date))
+for (i in 1:nrow(tweets)) {
+  if (tweets$week_day[i] == "Sunday") {
+    tweets$week_day[i] <- 0
+  } else if (tweets$week_day[i] == "Monday") {
+    tweets$week_day[i] <- 1
+  } else if (tweets$week_day[i] == "Tuesday") {
+    tweets$week_day[i] <- 2
+  } else if (tweets$week_day[i] == "Wednesday") {
+    tweets$week_day[i] <- 3
+  } else if (tweets$week_day[i] == "Thursday") {
+    tweets$week_day[i] <- 4
+  } else if (tweets$week_day[i] == "Friday") {
+    tweets$week_day[i] <- 5
+  } else if (tweets$week_day[i] == "Saturday") {
+    tweets$week_day[i] <- 6
+  }
+}
+tweets$hour <- format(as.POSIXct(tweets$local_time), format = "%H")
+tweets$month <- format(as.POSIXct(tweets$local_time), format = "%m")
+tweets$media_type <- tweets$Media
+for (i in 1:nrow(tweets)) {
+  if (str_detect(tweets$media_type[i], "Photo")) {
+    tweets$media_type[i] <- "Photo"
+  } else if (str_detect(tweets$media_type[i], "Video")) {
+    tweets$media_type[i] <- "Video"
+  } else {
+    tweets$media_type[i] <- "None"
+  }
+}
+head(tweets)
+```
+
+```{r}
+#releveling data
+tweets$week_day <- relevel(as.factor(tweets$week_day), '1')
+# tweets$week_day
+tweets$hour <- relevel(as.factor(tweets$hour),'00')
+# tweets$hour
+tweets$month <- relevel(as.factor(tweets$month), "01")
+# tweets$month
+tweets$media_type <- relevel(as.factor(tweets$media_type), "None")
+```
+
+```{r}
+attach(tweets)
+
+nbGLM <- glm.nb((engagement_index) ~ (hour) + (week_day) 
+                + (month)  + Followers + media_type, data=tweets)
+# dummy.coef(nbGLM)
+summary(nbGLM)
+```
+
+
+```{r}
+# bananas <- c("alskdjflbananahbkkjbbbukasj", "Banana", "BANANA")
+# str_detect(bananas, "banana")
+# 
+# today <- "2021-03-30 19:21:11.150"
+# time_obj <- format(as.POSIXct(today), format = "%m")
+# time_obj
+```
