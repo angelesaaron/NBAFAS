@@ -18,4 +18,6 @@ After the exploratory portion, we narrowed the focus point of the project to be 
 ### Results
 For each league affiliate, we outlined some key takeaways. Those included, but were not limited to, optimal times to tweet and ideal media types. Other reccomendations were included in the final slide deck. 
 
+### Slide Deck
+![Slide](images/1.png)
 
