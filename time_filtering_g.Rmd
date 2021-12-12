@@ -1,0 +1,153 @@
+---
+title: "Removing In-Game Tweets"
+output: html_notebook
+---
+
+```{r}
+g_games <- read_csv("g_games.csv", 
+    col_types = cols(Home_Team_Time = col_datetime(format = "%m/%d/%y %H:%M"), 
+        Visitor_Team_Time = col_datetime(format = "%m/%d/%y %H:%M")))
+#g_games = g_games %>% filter(Home_Team != "TMW")
+```
+
+```{r}
+team_codes = read.csv('g_team_codes.csv', header = TRUE)
+team_codes = team_codes %>% select(Team, Username)
+```
+
+
+
+```{r}
+tweets = read.csv("gleague_twitter2021.csv")
+```
+
+
+
+```{r}
+tweets$dt = as.POSIXct(tweets$Datetime, format="%Y-%m-%d %H:%M:%S", tz = "UTC")
+```
+
+```{r}
+est_teams = c("blue_coats", "CapitalCityGoGo", "ChargeCLE", "CPSkyhawks", "GleagueSquadron",
+              "greensboroswarm", "LakelandMagic", "LongIslandNets", "MaineCeltics", "MotorCityCruise",
+              "NBAGrandRapids", "Raptors905", "TheMadAnts", "wcknicks", "")
+cst_teams = c("austin_spurs", "iawolves", "MemphisHustle", "okcblue", "RGVVipers", "SFSkyforce",
+              "TexasLegends", "windycitybulls", "WisconsinHerd")
+mst_teams = c("slcstars")
+pst_teams = c("ACClippers", "GLeagueWarriors", "SouthBayLakers", "StocktonKings")
+```
+
+```{r}
+est_tweets = tweets %>% filter(Username %in% est_teams)
+cst_tweets = tweets %>% filter(Username %in% cst_teams)
+mst_tweets = tweets %>% filter(Username %in% mst_teams)
+pst_tweets = tweets %>% filter(Username %in% pst_teams)
+```
+
+
+```{r}
+est_tweets$local_time = format(est_tweets$dt, tz = "America/New_York", usetz = TRUE)
+cst_tweets$local_time = format(cst_tweets$dt, tz = "America/Chicago", usetz = TRUE)
+mst_tweets$local_time = format(mst_tweets$dt, tz = "America/Denver", usetz = TRUE)
+pst_tweets$local_time = format(pst_tweets$dt, tz = "America/Los_Angeles", usetz = TRUE)
+```
+
+```{r}
+fulltweets = rbind(est_tweets, cst_tweets, mst_tweets, pst_tweets)
+```
+
+```{r}
+coded_tweets = merge(fulltweets, team_codes, by = "Username", all.x = TRUE)
+```
+
+```{r}
+coded_tweets$date = as.Date(coded_tweets$local_time)
+coded_tweets$time = as.POSIXct(coded_tweets$local_time)
+```
+
+```{r}
+gtweets_localtimes = coded_tweets %>% select(-X)
+```
+
+
+
+```{r}
+library(lubridate)
+```
+
+
+```{r}
+g_games$Home_starttime = g_games$Home_Team_Time - as.difftime(1, units="hours")
+g_games$Visitor_starttime = g_games$Visitor_Team_Time - as.difftime(1, units="hours")
+g_games$Home_endtime = g_games$Home_Team_Time + as.difftime(4, units="hours")
+g_games$Visitor_endtime = g_games$Visitor_Team_Time + as.difftime(4, units="hours")
+```
+
+```{r}
+home = g_games %>% mutate(Team = Home_Team,
+    Start_Time = Home_starttime,
+    End_Time = Home_endtime
+                           )%>% select(Team, Start_Time, End_Time)
+away = g_games %>% mutate(Team = Away_Team,
+    Start_Time = Visitor_starttime,
+    End_Time = Visitor_endtime
+                           ) %>% select(Team, Start_Time, End_Time)
+```
+
+```{r}
+all_games = rbind(home, away)
+all_games$date = as.Date(all_games$Start_Time)
+```
+
+```{r}
+#skip for all but 2k league
+#all_games = all_games %>% group_by(Team, date) %>% summarise(games = n(), start = min(Start_Time), end = max(End_Time)) %>% filter(games > 1)
+```
+
+
+```{r}
+full_data = merge(gtweets_localtimes, all_games, on = c(Team, date))
+```
+
+```{r}
+gamedays = unique(all_games$date)
+```
+
+
+```{r}
+gtweets_localtimes_non_gameday = gtweets_localtimes %>% filter(!date %in% gamedays) %>% mutate(games = 0, in_game = 0, Start_Time = NA, End_Time = NA, TIME = NA) %>% select(Team, date, Username, Datetime, Tweet.Id, Text, Followers, ReplyCount, LikeCount, RetweetCount, QuoteCount, Media, dt, local_time, time, Start_Time, End_Time, TIME, in_game)
+gtweets_localtimes_non_gameday
+```
+
+```{r}
+
+library(dplyr)
+library(data.table)
+#true is 1, in_game will be 1
+in_game_coding = full_data %>% mutate(TIME = as.ITime(time),
+                                      in_game = as.integer(TIME >= as.ITime(Start_Time) & TIME <=as.ITime(End_Time)))
+```
+
+```{r}
+all_tweets = rbind(in_game_coding, gtweets_localtimes_non_gameday)
+```
+
+```{r}
+all_tweets %>% filter(in_game == 1)
+```
+
+
+```{r}
+out_of_game_g_tweets = all_tweets %>% filter(in_game != 1) %>% select(-c(dt)) 
+```
+
+```{r}
+write_csv(out_of_game_g_tweets, "out_of_game_g_tweets.csv")
+```
+
+
+
+
+
+
+

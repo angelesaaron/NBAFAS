@@ -1,0 +1,428 @@
+---
+title: "NonGameDataR"
+author: "Noah Jankowski"
+date: "12/1/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ISLR)
+library(lubridate)
+library(anytime)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+library(caret)
+library(gbm)
+library(foreign)
+library(MASS)
+
+```
+
+## Initialize Data
+
+```{r, warning=FALSE}
+
+# Read in data
+
+tweets0 <- read.csv('NEWwnba_twitter.csv')
+
+# Drop unnecessary columns
+
+myvars <- names(tweets0) %in% c("local_time", "time", "Start_Time","End_Time","in_game","Datetime","TIME","Text")
+tweets <- tweets0[!myvars]
+
+# Convert date to type date and time to numeric 
+
+tweets$date <- as.Date(tweets$date)
+time <- anytime(tweets0$local_time)
+tweets$Time <- format(time,format="%H:%M:%S")
+tweets$Time <- as.numeric(hms(tweets$Time))
+tweets$Time <- tweets$Time/3600
+
+# Remove Two Weeks of Olympics
+
+tweets <- tweets[tweets$date > "2021-08-08" | tweets$date < "2021-07-23",]
+
+```
+
+## Look at statistics of stars mentioned users vs. others
+
+```{r}
+
+aja <- tweets[str_detect(tweets$MentionedUsers,"_ajawilson22"),]
+
+jonquel <- tweets[str_detect(tweets$MentionedUsers,"jus242"),]
+
+breanna <- tweets[str_detect(tweets$MentionedUsers,"breannastewart"),]
+
+candace <- tweets[str_detect(tweets$MentionedUsers,"Candace_Parker"),]
+
+diana <- tweets[str_detect(tweets$MentionedUsers,"dianataurasi"),]
+
+arike <- tweets[str_detect(tweets$MentionedUsers,"arike_o"),]
+
+mvps <- rbind(aja,jonquel,breanna,candace,diana,arike)
+
+mean(mvps$RetweetCount)
+
+mean(tweets$RetweetCount)
+
+mean(mvps$LikeCount)
+
+mean(tweets$LikeCount)
+
+```
+
+## Change Hashtag and Mentioned User Variables to Binary
+
+```{r}
+
+levels(tweets$MentionedUsers) <- c(levels(tweets$MentionedUsers), 0)
+tweets$MentionedUsers[tweets$MentionedUsers==""] <- 0
+
+levels(tweets$Hashtags) <- c(levels(tweets$Hashtags), 0,1)
+tweets$Hashtags[tweets$Hashtags==""]<-0
+
+tweets$MentionedUsers <- as.numeric(tweets$MentionedUsers != "0")
+tweets$Hashtags <- as.numeric(tweets$Hashtags != "0")
+
+```
+
+## Categorize Media by Type: Text-Only, Photo, Video, and Gif
+
+```{r}
+
+levels(tweets$Media) <- c(levels(tweets$Media), "Text","Photo","Gif","Video",0)
+tweets$Media[tweets$Media==""]<-0
+
+for (i in 1:nrow(tweets)) {
+  if(tweets$Media[i]==0){
+    tweets$Media[i]="Text"
+  }
+  else if(str_detect(tweets$Media[i],"Photo")){
+    tweets$Media[i]="Photo"
+  }
+  
+  else if(str_detect(tweets$Media[i],"Gif")){
+    tweets$Media[i]="Gif"
+  }
+  
+  else{
+    tweets$Media[i]="Video"
+  }
+}
+
+```
+
+## Looking at mean team data
+
+```{r}
+
+twitter_handles <- c('AtlantaDream','chicagosky','ConnecticutSun', 'DallasWings','IndianaFever','LASparks','LVAces','minnesotalynx',
+                  'nyliberty','PhoenixMercury','seattlestorm','WashMystics')
+
+city_pops <- c(488800,2710000,18716,1330000,864447,3967000,634773,420324,8419000,1633000,724305,692683)
+
+wins21 <- c(8,16,26,14,6,12,24,22,12,19,21,12)
+
+a=1
+ntweets <- c()
+for(team in twitter_handles){
+
+  abc <- subset(tweets,Username==team)
+
+  ntweets[a] <- nrow(abc)
+  
+  a = a+1
+}
+
+meandata <- tweets %>% 
+  group_by(Username) %>% 
+  summarise(across(c('ReplyCount','LikeCount','RetweetCount','QuoteCount', 'followersCount'), list(mean = mean)))
+
+# meandata$ReplyCount_mean <- scale(meandata$ReplyCount_mean)
+# meandata$RetweetCount_mean <- scale(meandata$RetweetCount_mean)
+# meandata$LikeCount_mean <- scale(meandata$LikeCount_mean)
+# meandata$QuoteCount_mean <- scale(meandata$QuoteCount_mean)
+
+meandata$n_tweets <- ntweets
+meandata$citypop <- city_pops
+meandata$wins <- wins21
+
+meandata
+
+ggplot(data = meandata, aes(x=n_tweets))+geom_point(aes(y=LikeCount_mean,shape='likes'))
+
+ggplot(data = meandata, aes(x=n_tweets))+geom_point(aes(y=RetweetCount_mean,shape='retweets'))
+
+```
+
+Looking at the table, Chicago Sky, Minnesota Lynx, and Phoenix Mercury get the most average likes, as well as the most average retweets, which tracks with their follower count.
+
+## Visualizations
+
+```{r}
+
+
+ggplot(data = meandata, aes(x=citypop))+geom_point(aes(y=followersCount_mean,col='Followers')) + labs(title="Account Followers vs. City Population",x= "City Population (Millions)",y="Followers") +
+  scale_y_continuous(labels = comma) + scale_x_continuous(labels = comma) + geom_smooth(method='lm',aes(y=followersCount_mean),se=F)
+
+ggplot(data = meandata, aes(x=wins))+geom_point(aes(y=followersCount_mean,col='Followers')) + labs(title="Account Followers vs. Wins",x= "2021 Wins",y="Followers") +
+  scale_y_continuous(labels = comma) + scale_x_continuous(labels = comma) + geom_smooth(method='lm',aes(y=followersCount_mean),se=F)
+
+ggplot(data = meandata, aes(x=followersCount_mean))+geom_point(aes(y=LikeCount_mean)) + labs(title="Average Likes vs. Followers",x= "Followers",y="Avg. Likes") +
+  scale_y_continuous(labels = comma) + scale_x_continuous(labels = comma) + geom_smooth(method='lm',aes(y=LikeCount_mean),se=F)
+
+ggplot(data = meandata, aes(x=followersCount_mean))+geom_point(aes(y=RetweetCount_mean)) + labs(title="Average Retweets vs. Followers",x= "Followers",y="Avg. Retweets") +
+  scale_y_continuous(labels = comma) + scale_x_continuous(labels = comma) + geom_smooth(method='lm',aes(y=RetweetCount_mean),se=F)
+
+
+```
+
+My main takeaways from these graphs: city population doesn't have a very large effect on number of followers, neither does season wins. However, as expected follower count does positively affect average number of likes and retweets, so to keep thing consistent we need to keep those two linked during the model.
+
+## Looking at Type of Media
+
+```{r, warning=FALSE, message=FALSE}
+
+meandata2 <- tweets %>% 
+  group_by(Media, Hashtags, MentionedUsers) %>% 
+  summarise(across(c('ReplyCount','LikeCount','RetweetCount','QuoteCount','followersCount'), list(mean = mean)))
+
+meandata2
+
+Gifs <- subset(meandata2,Media=="Gif")
+Videos <- subset(meandata2,Media=="Video")
+Texts <- subset(meandata2,Media=="Text")
+Photos <- subset(meandata2,Media=="Photo")
+
+meandata2$ReplyCount_mean <- meandata2$ReplyCount_mean/meandata2$followersCount_mean
+meandata2$RetweetCount_mean <- meandata2$RetweetCount_mean/meandata2$followersCount_mean
+meandata2$LikeCount_mean <- meandata2$LikeCount_mean/meandata2$followersCount_mean
+meandata2$QuoteCount_mean <- meandata2$QuoteCount_mean/meandata2$followersCount_mean
+meandata2$sum <- NA
+
+for(i in 1:nrow(meandata2)){
+  meandata2$sum[i] <- sum(meandata2[i,4:7])
+}
+
+meandata2[order(meandata2$sum),]
+
+```
+
+Text-Only tweets are the worst of the four media types for engagement, followed by gifs. Including a hashtag tends to boost engagement versus not including one. Mentioning a user with no hashtag tends to have the lowest engagement rate for most tweets, unless it is a video.
+
+Photo tweets are by far the most engaged with, taking the top 4 spots. Video tweets take up 4 of the next 5 spots, with gif + hashtag sneaking in there.
+
+My biggest takeaways from this were that photo posts drive the most engagement, and that hashtags also typically appear in well-engaged posts. Mentioning another user is generally bad for engagement unless it is with a video.
+
+## Time-Series Visualization
+
+```{r,warning=FALSE,message=FALSE}
+
+tweets_sorted <- tweets[order(tweets$date),]
+
+likes <- ggplot(tweets_sorted, aes(x=date, y=LikeCount)) +
+  geom_line() + 
+  xlab("Date")+scale_x_date(limit=c(as.Date("2021-01-01"),as.Date("2021-11-01"))) + geom_vline(xintercept=as.Date("2021-01-15"),color="red") +
+  geom_vline(xintercept=as.Date("2021-05-13"),color="blue",lwd=3,alpha=0.10)+ geom_vline(xintercept=as.Date("2021-10-17"),color="blue",lwd=3,alpha=0.10) + 
+  geom_vline(xintercept=as.Date("2021-04-15"),color="green") + annotate("text", x=as.Date("2021-04-10"), y=30000, label= "WNBA Draft",colour="green") + 
+  annotate("text", x=as.Date("2021-08-10"), y=30000, label= "WNBA Season",colour="blue") + annotate("text", x=as.Date("2021-01-10"), y=30000, label= "Free Agency",colour="red")
+
+likes
+
+rts <- ggplot(tweets_sorted, aes(x=date, y=RetweetCount)) +
+  geom_line() + 
+  xlab("Date")+scale_x_date(limit=c(as.Date("2021-01-01"),as.Date("2021-11-01"))) + geom_vline(xintercept=as.Date("2021-01-15"),color="red") +
+  geom_vline(xintercept=as.Date("2021-05-13"),color="blue",lwd=3,alpha=0.10)+ geom_vline(xintercept=as.Date("2021-10-17"),color="blue",lwd=3,alpha=0.10) + 
+  geom_vline(xintercept=as.Date("2021-04-15"),color="green") + annotate("text", x=as.Date("2021-04-10"), y=5000, label= "WNBA Draft",colour="green") + 
+  annotate("text", x=as.Date("2021-08-10"), y=5000, label= "WNBA Season",colour="blue") + annotate("text", x=as.Date("2021-01-10"), y=5000, label= "Free Agency",colour="red")
+
+rts
+
+```
+
+There appears to be a few big spikes in engagement during the WNBA season, including right after free agency starts, during the draft, leading up to the beginning of the season, and during the WNBA playoffs.
+
+## Polynomial Regression
+
+```{r,message=FALSE}
+
+tweets$Time <- round(tweets$Time,0)
+
+ggplot(tweets, aes(x = Time, y = RetweetCount/followersCount)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,4)),col="blue")+ylim(0,0.025)
+
+ggplot(tweets, aes(x = Time)) + 
+  geom_histogram(color="black", fill="orange",bins=17) + labs(y="Number of Tweets",x="Local Time",title="WNBA Team Tweets per Hour")+
+ geom_density(alpha=.8, fill="orange") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+tweets <- tweets[tweets$Time > 7,]
+
+mean((tweets$QuoteCount+tweets$RetweetCount)/tweets$followersCount)
+
+ggplot(tweets, aes(x = Time, y = RetweetCount/followersCount)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,4)),col="blue")+ylim(0,0.025)
+
+mean_time3 <- tweets %>% 
+  group_by(Time) %>% 
+  summarise(quantile=quantile((RetweetCount+QuoteCount)/followersCount,probs=c(0.50)))
+
+ggplot(mean_time3, aes(x = Time, y = quantile)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,5)),col="blue") + labs(x="Local Time",y="Median Retweets and Quote Tweets per Follower",title="Median Engagement per Hour")+
+  scale_y_continuous(labels = comma) + ylim(0,0.0003) + geom_hline(yintercept= 0.0002,color="red")
+
+mean_time4 <- tweets %>% 
+  group_by(Time) %>% 
+  summarise(mean=mean((RetweetCount+QuoteCount)/followersCount))
+
+ggplot(mean_time4, aes(x = Time, y = mean)) + 
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,5)),col="blue") + labs(x="Local Time",y="Median Combined Retweets and Quote Tweets",title="Median Engagement per Hour")+
+  scale_y_continuous(labels = comma) + ylim(0,0.001) + geom_hline(yintercept= 0.0004,color="red") + annotate("text", x=17.5, y=.0003, label= "4 retweets per 10,000 followers",colour="red")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+## Subsetting
+
+```{r}
+
+photos <- tweets[tweets$Media=='Photo',]
+
+videos <- tweets[tweets$Media=='Video',]
+
+text <- tweets[tweets$Media=='Text',]
+
+gifs <- tweets[tweets$Media=='Gif',]
+
+photos <- photos %>%
+  group_by(Time) %>%
+  summarise(mean=mean(RetweetCount+QuoteCount/followersCount))
+
+videos <- videos %>%
+  group_by(Time) %>%
+  summarise(mean=mean(RetweetCount+QuoteCount/followersCount))
+
+text <- text %>%
+  group_by(Time) %>%
+  summarise(mean=mean(RetweetCount+QuoteCount/followersCount))
+
+gifs <- gifs %>%
+  group_by(Time) %>%
+  summarise(mean=mean(RetweetCount+QuoteCount/followersCount))
+
+a <- ggplot(photos, aes(x = Time, y = mean)) +
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,5)),col="blue") + labs(x="Local Time",y="Mean Retweets and Quote Tweets")
+
+b <- ggplot(videos, aes(x = Time, y = mean)) +
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,5)),col="blue") + labs(x="Local Time",y="Mean Retweets and Quote Tweets")
+
+
+c <- ggplot(text, aes(x = Time, y = mean)) +
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,5)),col="blue") + labs(x="Local Time",y="Mean Retweets and Quote Tweets")
+
+
+d <- ggplot(gifs, aes(x = Time, y = mean)) +
+  geom_point() +
+  stat_smooth(method='lm', formula = (y~poly(x,5)),col="blue") + labs(x="Local Time",y="Mean Retweets and Quote Tweets")
+
+```
+
+## Decision Tree & Regression
+
+```{r}
+
+tweets <- droplevels(tweets)
+
+lm_fit <- lm(mean ~ poly(Time,5), data = mean_time4)
+summary(lm_fit)
+
+new <- data.frame(mean = (tweets$QuoteCount+tweets$RetweetCount)/tweets$followersCount,Time=tweets$Time)
+
+predicted <- predict(lm_fit,newdata = new)
+sqrt(mean((new$mean - predicted)^2))
+
+# create tree using training set and all variables (tree picks important ones)
+
+tree <- rpart(RetweetCount ~ Time + Media + MentionedUsers + followersCount, data = tweets, method = 'anova')
+
+#plot the tree from training data 
+
+fancyRpartPlot(tree)
+
+boost_fit <- gbm(RetweetCount ~ Time + Media + MentionedUsers + followersCount, data = tweets, distribution = "gaussian", shrinkage = 0.01, n.tree = 1000, interaction.depth = 4)
+summary(boost_fit)
+sqrt(mean((tweets$RetweetCount - predict(boost_fit,newdata=tweets))^2))
+
+```
+
+## Negative Binomial
+
+```{r}
+
+ggplot(tweets, aes(RetweetCount, fill = Media)) + geom_histogram(binwidth = 1) + facet_grid(Media ~ ., margins = TRUE, scales = "free") + xlim(0,200)
+
+```
+
+```{r}
+
+with(tweets, tapply(RetweetCount, Media, function(x) {
+    sprintf("M (SD) = %1.2f (%1.2f)", mean(x), sd(x))
+}))
+
+```
+
+```{r}
+
+summary(m1 <- glm.nb(RetweetCount ~ Time + Media + followersCount, data = tweets))
+(est <- cbind(Estimate = coef(m1), confint(m1)))
+
+```
+
+```{r}
+
+newdata2 <- data.frame(
+  Time = rep(seq(from = min(tweets$Time), to = max(tweets$Time), length.out = 100), 4),
+  Media = factor(rep(1:4, each = 100), levels = 1:4, labels =
+  levels(tweets$Media)),
+  followersCount = rep(mean(tweets$followersCount),400))
+
+newdata2 <- cbind(newdata2, predict(m1, newdata2, type = "link", se.fit=TRUE))
+newdata2 <- within(newdata2, {
+  RetweetCount <- exp(fit)
+  LL <- exp(fit - 1.96 * se.fit)
+  UL <- exp(fit + 1.96 * se.fit)
+})
+
+ggplot(newdata2, aes(Time, RetweetCount)) +
+  geom_ribbon(aes(ymin = LL, ymax = UL, fill = Media), alpha = .25) +
+  geom_line(aes(colour = Media), size = 2) +
+  labs(x = "Time of Day", y = "Predicted Retweets") + xlim(7,24)
+
+```
+
+```{r}
+
+predicted <- predict(m1,newdata = tweets)
+
+sqrt(mean((tweets$RetweetCount-predicted)^2))
+
+```
